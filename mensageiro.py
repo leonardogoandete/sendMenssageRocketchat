@@ -1,46 +1,57 @@
+# docker run --name rocketchat -p 3000:3000 --link db --env ROOT_URL=http://localhost --env MONGO_OPLOG_URL=mongodb://db:27017/local -d rocket.chat
+import os
+import sys
 import requests
 import json
 
-# Define o servidor do rocket
-servidor_rocket = 'http://21.21.21.5:3000'
-canais = ['canal1','canal2']
-#mensagem='Boa tarde Pesso @all, Estamos fazendo um teste!'
+ROCKET_SERVER = "21.21.21.3:3000"
+if os.getenv('CANAIS_ROCKET') is not None:
+  CANAIS = os.getenv('CANAIS_ROCKET')
+else:
+  CANAIS="canal-a,canal-b,canal-c"
 
-#define o cabeçalho da requisição
-headers = {
-    'Content-Type': 'application/json; charset=utf-8',
-}
+def login():
+    #envia a requisição
+    response = requests.post(
+            ROCKET_SERVER+'/api/v1/login', 
+            headers= {'Content-Type': 'application/json; charset=utf-8'}, 
+            json={'username': 'jubileu','password': 'jubileu'},
+            );
+    # converte a resposta de bytes para um dicionário do Python
+    user = json.loads(response.content);
+    #guardo userId e token
+    userId = user['data']['userId'];
+    token =  user['data']['authToken'];
+    return userId,token
 
-json_data = {
-    'username': 'jubileu',
-    'password': 'jubileu',
-}
+def enviaMensagem(canal,mensagem,usuario):
+  if mensagem != None:
+    resp = requests.post(
+      url= ROCKET_SERVER+'/api/v1/chat.postMessage',
+      json= {'channel': canal, 'text': mensagem},
+      headers= {'X-Auth-Token': usuario[1], 'X-User-Id' : usuario[0], 'Content-Type' : 'application/json; charset=utf-8'}, timeout=1.5,
+      );
+    if resp.status_code == 200:  
+      print("Enviando mensagem no canal: " + canal)
 
-#envia a requisição
-response = requests.post(
-           servidor_rocket+'/api/v1/login', 
-           headers=headers, 
-           json=json_data
-           );
-# converte a resposta de bytes para um dicionário do Python
-user = json.loads(response.content);
-
-#guardo userId e token
-userId = user['data']['userId'];
-token =  user['data']['authToken'];
-
-# enviar mensagem
-# https://developer.rocket.chat/reference/api/rest-api/endpoints/team-collaboration-endpoints/chat-endpoints/postmessage#important
-
-userHeaders = {
-    'X-Auth-Token': token,
-    'X-User-Id' : userId,
-    'Content-Type' : 'application/json; charset=utf-8',
-}
-
-status = requests.post(
-    url=servidor_rocket+'/api/v1/chat.postMessage',
-    json= {'channel': canais, 'text': mensagem,},
-    headers= userHeaders,
-    timeout=1.5,
-);
+if __name__ == "__main__":
+  try:
+      usuario = login()
+      if len(sys.argv) != 3 and len(sys.argv) != 2:
+        sys.exit('Usage:  %s MENSAGEM\n\t%s CANAIS MENSAGEM\n\n\
+          example: %s "Mensagem de teste!"\n\
+              \t   %s "canal-a,canal-b" "Mensagem de teste"\n' % (sys.argv[0],sys.argv[0],sys.argv[0],sys.argv[0]))
+      elif len(sys.argv) == 3:
+        canais=sys.argv[1]
+        mensagem=sys.argv[2]
+        for canal in canais.split(","):
+          enviaMensagem(canal,mensagem,usuario)
+      
+      elif len(sys.argv) == 2:
+        mensagem=sys.argv[1]
+        for canal in CANAIS.split(","):
+          enviaMensagem(canal,mensagem,usuario)
+      print("Mensagem: " + mensagem)
+      
+  except Exception as exc:
+    print (exc)
